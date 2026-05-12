@@ -1,0 +1,11 @@
+﻿[Event "Game 1"]
+[White "Player A"]
+[Black "Player B"]
+
+1. e4 e5 2. Nf3 Nc6
+
+[Event "Game 2"]
+[White "Player C"]
+[Black "Player D"]
+
+1. d4 d5 2. c4 c6

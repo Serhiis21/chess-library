@@ -1,0 +1,37 @@
+﻿body {
+  margin: 0;
+  font-family: Arial;
+  background: #f4f4f4;
+  color: #111;
+}
+
+button {
+  padding: 6px 10px;
+  border: none;
+  background: #ddd;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #bbb;
+}
+
+.card {
+  padding: 10px;
+  margin-bottom: 8px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+.card:hover {
+  background: #eee;
+  transform: translateX(4px);
+}
+
+.active {
+  background: #4caf50;
+  color: white;
+}

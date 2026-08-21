@@ -15,100 +15,162 @@ export default function Board({ pgn }) {
   const [moves, setMoves] = useState([]);
   const [index, setIndex] = useState(0);
 
-  const [playing, setPlaying] = useState(false);
+  // 🔥 FEN
+  const [startFen, setStartFen] =
+    useState(null);
 
-  const [speed, setSpeed] = useState(1000);
+  // 🔥 BLACK TO MOVE FROM FEN
+  const [startsBlack, setStartsBlack] =
+    useState(false);
+
+  const [playing, setPlaying] =
+    useState(false);
+
+  const [speed, setSpeed] =
+    useState(1000);
 
   const timerRef = useRef(null);
 
-  // ЗАГРУЗКА PGN
+  // 📱 RESPONSIVE SIZE
+  const boardSize =
+    window.innerWidth < 700
+      ? window.innerWidth - 24
+      : 520;
+
+  // =========================
+  // LOAD PGN
+  // =========================
   useEffect(() => {
 
     if (!pgn) return;
 
     const g = new Chess();
 
-    g.loadPgn(pgn);
+    try {
+
+      g.loadPgn(pgn, {
+        sloppy: true
+      });
+
+    } catch {
+
+      return;
+
+    }
+
+    // 🔥 FEN SUPPORT
+    const headers = g.header();
+
+    setStartFen(
+      headers.FEN || null
+    );
+
+    // 🔥 BLACK TO MOVE
+    if (
+      headers.FEN &&
+      headers.FEN.includes(" b ")
+    ) {
+
+      setStartsBlack(true);
+
+    } else {
+
+      setStartsBlack(false);
+
+    }
 
     setMoves(g.history());
+
     setIndex(0);
+
     setPlaying(false);
 
   }, [pgn]);
 
-  // СОЗДАНИЕ ДОСКИ
+  // =========================
+  // CREATE BOARD
+  // =========================
   useEffect(() => {
 
     if (!boardRef.current) return;
 
     if (!cgRef.current) {
 
-      cgRef.current = Chessground(boardRef.current, {
+      cgRef.current = Chessground(
+        boardRef.current,
+        {
 
-        coordinates: true,
+          coordinates: true,
 
-        movable: {
-          free: false
-        },
+          movable: {
+            free: false
+          },
 
-        animation: {
-          enabled: true,
-          duration: 250
-        },
+          animation: {
+            enabled: true,
+            duration: 250
+          },
 
-        drawable: {
+          drawable: {
 
-          enabled: true,
+            enabled: true,
 
-          visible: true,
+            visible: true,
 
-          eraseOnClick: true,
+            eraseOnClick: true,
 
-          brushes: {
+            brushes: {
 
-            green: {
-              key: "g",
-              color: "#4caf50",
-              opacity: 0.8,
-              lineWidth: 10
-            },
+              green: {
+                key: "g",
+                color: "#4caf50",
+                opacity: 0.8,
+                lineWidth: 10
+              },
 
-            red: {
-              key: "r",
-              color: "#e53935",
-              opacity: 0.8,
-              lineWidth: 10
-            },
+              red: {
+                key: "r",
+                color: "#e53935",
+                opacity: 0.8,
+                lineWidth: 10
+              },
 
-            yellow: {
-              key: "y",
-              color: "#fbc02d",
-              opacity: 0.8,
-              lineWidth: 10
-            },
+              yellow: {
+                key: "y",
+                color: "#fbc02d",
+                opacity: 0.8,
+                lineWidth: 10
+              },
 
-            blue: {
-              key: "b",
-              color: "#1e88e5",
-              opacity: 0.8,
-              lineWidth: 10
+              blue: {
+                key: "b",
+                color: "#1e88e5",
+                opacity: 0.8,
+                lineWidth: 10
+              }
+
             }
 
           }
 
         }
+      );
 
-      });
     }
 
   }, []);
 
-  // ОБНОВЛЕНИЕ ПОЗИЦИИ
+  // =========================
+  // UPDATE POSITION
+  // =========================
   useEffect(() => {
 
     if (!cgRef.current) return;
 
-    const g = new Chess();
+    // 🔥 START FROM FEN
+    const g = new Chess(
+      startFen || undefined
+    );
 
     let lastMove = null;
 
@@ -121,10 +183,13 @@ export default function Board({ pgn }) {
         const result = g.move(move);
 
         if (result) {
+
           lastMove = result;
+
         }
 
       }
+
     }
 
     cgRef.current.set({
@@ -137,9 +202,11 @@ export default function Board({ pgn }) {
 
     });
 
-  }, [index, moves]);
+  }, [index, moves, startFen]);
 
-  // АВТОПЛЕЙ
+  // =========================
+  // AUTOPLAY
+  // =========================
   useEffect(() => {
 
     if (!playing) {
@@ -147,6 +214,7 @@ export default function Board({ pgn }) {
       clearInterval(timerRef.current);
 
       return;
+
     }
 
     timerRef.current = setInterval(() => {
@@ -155,9 +223,12 @@ export default function Board({ pgn }) {
 
         if (prev >= moves.length) {
 
-          clearInterval(timerRef.current);
+          clearInterval(
+            timerRef.current
+          );
 
           return prev;
+
         }
 
         return prev + 1;
@@ -166,76 +237,144 @@ export default function Board({ pgn }) {
 
     }, speed);
 
-    return () => clearInterval(timerRef.current);
+    return () =>
+      clearInterval(timerRef.current);
 
   }, [playing, speed, moves.length]);
 
-  // ПЕРЕХОД
+  // =========================
+  // NAVIGATION
+  // =========================
   function go(i) {
 
     setIndex(
-      Math.max(0, Math.min(i, moves.length))
+
+      Math.max(
+        0,
+        Math.min(i, moves.length)
+      )
+
     );
 
   }
 
   return (
-    <div style={{ display: "flex", gap: 20 }}>
 
-      {/* ДОСКА */}
+    <div
+      style={{
+        display: "flex",
+        gap: 20,
+
+        flexDirection:
+          window.innerWidth < 900
+            ? "column"
+            : "row"
+      }}
+    >
+
+      {/* BOARD */}
       <div
         ref={boardRef}
         style={{
-          width: 520,
-          height: 520,
+
+          width: boardSize,
+          height: boardSize,
+
           borderRadius: 8,
+
           overflow: "hidden",
-          boxShadow: "0 4px 16px rgba(0,0,0,0.25)"
+
+          boxShadow:
+            "0 4px 16px rgba(0,0,0,0.25)",
+
+          flexShrink: 0
+
         }}
       />
 
-      {/* ПРАВАЯ ПАНЕЛЬ */}
-      <div style={{ width: 280 }}>
+      {/* RIGHT PANEL */}
+      <div
+        style={{
+          width:
+            window.innerWidth < 900
+              ? "100%"
+              : 320
+        }}
+      >
 
         <h3>Moves</h3>
 
-        {/* УПРАВЛЕНИЕ */}
-        <div style={{ marginBottom: 14 }}>
+        {/* CONTROLS */}
+        <div
+          style={{
+            marginBottom: 14,
 
-          <button onClick={() => go(0)}>
+            display: "flex",
+
+            flexWrap: "wrap",
+
+            gap: 8
+          }}
+        >
+
+          <button
+            onClick={() => go(0)}
+          >
             ⏮
           </button>
 
-          <button onClick={() => go(index - 1)}>
+          <button
+            onClick={() =>
+              go(index - 1)
+            }
+          >
             ◀
           </button>
 
-          <button onClick={() => go(index + 1)}>
+          <button
+            onClick={() =>
+              go(index + 1)
+            }
+          >
             ▶
           </button>
 
-          <button onClick={() => go(moves.length)}>
+          <button
+            onClick={() =>
+              go(moves.length)
+            }
+          >
             ⏭
           </button>
 
           <button
-            onClick={() => setPlaying(!playing)}
-            style={{ marginLeft: 10 }}
+            onClick={() =>
+              setPlaying(!playing)
+            }
           >
-            {playing ? "⏸ Pause" : "▶ Play"}
+            {playing
+              ? "⏸ Pause"
+              : "▶ Play"}
           </button>
 
         </div>
 
-        {/* СКОРОСТЬ */}
-        <div style={{ marginBottom: 16 }}>
+        {/* SPEED */}
+        <div
+          style={{
+            marginBottom: 16
+          }}
+        >
 
           <div>Speed</div>
 
           <select
             value={speed}
+
             onChange={(e) =>
-              setSpeed(Number(e.target.value))
+              setSpeed(
+                Number(e.target.value)
+              )
             }
           >
 
@@ -259,27 +398,90 @@ export default function Board({ pgn }) {
 
         </div>
 
-        {/* ХОДЫ */}
+        {/* MOVES */}
         <div
           style={{
-            maxHeight: 420,
-            overflowY: "auto"
+
+            maxHeight:
+              window.innerWidth < 900
+                ? 260
+                : 420,
+
+            overflowY: "auto",
+
+            border:
+              window.innerWidth < 900
+                ? "1px solid #ddd"
+                : "none",
+
+            borderRadius: 8,
+
+            padding:
+              window.innerWidth < 900
+                ? 8
+                : 0
+
           }}
         >
 
           {Array.from({
-            length: Math.ceil(moves.length / 2)
+            length:
+              Math.ceil(
+                (moves.length + (startsBlack ? 1 : 0)) / 2
+              )
           }).map((_, i) => {
 
-            const white = moves[i * 2];
-            const black = moves[i * 2 + 1];
+            let white = null;
+            let black = null;
 
-            const whiteIndex = i * 2 + 1;
-            const blackIndex = i * 2 + 2;
+            let whiteIndex = null;
+            let blackIndex = null;
+
+            // 🔥 GAME STARTS FROM BLACK
+            if (startsBlack) {
+
+              if (i === 0) {
+
+                black = moves[0];
+                blackIndex = 1;
+
+              } else {
+
+                white =
+                  moves[i * 2 - 1];
+
+                black =
+                  moves[i * 2];
+
+                whiteIndex =
+                  i * 2;
+
+                blackIndex =
+                  i * 2 + 1;
+
+              }
+
+            } else {
+
+              white =
+                moves[i * 2];
+
+              black =
+                moves[i * 2 + 1];
+
+              whiteIndex =
+                i * 2 + 1;
+
+              blackIndex =
+                i * 2 + 2;
+
+            }
 
             return (
+
               <div
                 key={i}
+
                 style={{
                   display: "flex",
                   gap: 10,
@@ -287,54 +489,85 @@ export default function Board({ pgn }) {
                 }}
               >
 
-                <div style={{ width: 30 }}>
+                <div
+                  style={{
+                    width: 30
+                  }}
+                >
                   {i + 1}.
                 </div>
 
                 {/* WHITE */}
                 <div
-                  onClick={() => go(whiteIndex)}
+                  onClick={() =>
+                    white &&
+                    go(whiteIndex)
+                  }
+
                   style={{
-                    width: 80,
-                    cursor: "pointer",
+
+                    width: 90,
+
+                    cursor: white
+                      ? "pointer"
+                      : "default",
+
                     borderRadius: 4,
+
                     padding: "2px 4px",
 
                     background:
                       index === whiteIndex
                         ? "#ffe082"
                         : "transparent"
+
                   }}
                 >
-                  {white}
+                  {white || ""}
                 </div>
 
                 {/* BLACK */}
                 <div
-                  onClick={() => go(blackIndex)}
+                  onClick={() =>
+                    black &&
+                    go(blackIndex)
+                  }
+
                   style={{
-                    width: 80,
-                    cursor: "pointer",
+
+                    width: 90,
+
+                    cursor: black
+                      ? "pointer"
+                      : "default",
+
                     borderRadius: 4,
+
                     padding: "2px 4px",
 
                     background:
                       index === blackIndex
                         ? "#ffe082"
                         : "transparent"
+
                   }}
                 >
-                  {black || ""}
+                  {startsBlack && i === 0
+                    ? `... ${black || ""}`
+                    : black || ""}
                 </div>
 
               </div>
+
             );
+
           })}
 
         </div>
 
       </div>
 
-    </div>
+</div>
+
   );
 }

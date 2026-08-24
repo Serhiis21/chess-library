@@ -1,5 +1,4 @@
-﻿
-import { useMemo, useState } from "react";
+﻿import { useMemo, useState } from "react";
 import { Chess } from "chess.js";
 
 import Board from "./components/Board.jsx";
@@ -70,7 +69,11 @@ export default function App() {
   // =========================================================
 
   function exportLibrary() {
-    const data = JSON.stringify(books, null, 2);
+    const data = JSON.stringify(
+      books,
+      null,
+      2
+    );
 
     const blob = new Blob(
       [data],
@@ -79,15 +82,21 @@ export default function App() {
       }
     );
 
-    const url = URL.createObjectURL(blob);
+    const url =
+      URL.createObjectURL(blob);
 
-    const a = document.createElement("a");
+    const a =
+      document.createElement("a");
 
     a.href = url;
-    a.download = "chess-library-backup.json";
+
+    a.download =
+      "chess-library-backup.json";
 
     document.body.appendChild(a);
+
     a.click();
+
     document.body.removeChild(a);
 
     URL.revokeObjectURL(url);
@@ -98,22 +107,28 @@ export default function App() {
   // =========================================================
 
   function importLibrary(e) {
-    const file = e.target.files?.[0];
+    const file =
+      e.target.files?.[0];
 
     if (!file) {
       return;
     }
 
-    const reader = new FileReader();
+    const reader =
+      new FileReader();
 
     reader.onload = (event) => {
       try {
-        const data = JSON.parse(
-          event.target.result
-        );
+        const data =
+          JSON.parse(
+            event.target.result
+          );
 
         if (!Array.isArray(data)) {
-          alert("Wrong backup file");
+          alert(
+            "Wrong backup file"
+          );
+
           return;
         }
 
@@ -122,9 +137,13 @@ export default function App() {
         setSelectedBook(null);
         setSelectedGame(null);
 
-        alert("Library restored");
+        alert(
+          "Library restored"
+        );
       } catch {
-        alert("Import error");
+        alert(
+          "Import error"
+        );
       }
     };
 
@@ -138,79 +157,90 @@ export default function App() {
   // =========================================================
 
   async function handlePGNFile(e) {
-    const file = e.target.files?.[0];
+    const file =
+      e.target.files?.[0];
 
     if (!file) {
       return;
     }
 
     try {
-      const text = await file.text();
+      const text =
+        await file.text();
 
       const games = [];
 
       /*
-       * PGN files normally contain games starting
-       * with [Event "..."].
+       * PGN files normally contain
+       * games starting with [Event "..."].
        */
-      const parts = text.split(
-        /\r?\n(?=\[Event\s)/i
+
+      const parts =
+        text.split(
+          /\r?\n(?=\[Event\s)/i
+        );
+
+      parts.forEach(
+        (pgn, index) => {
+          if (!pgn.trim()) {
+            return;
+          }
+
+          try {
+            const chess =
+              new Chess();
+
+            chess.loadPgn(
+              pgn,
+              {
+                sloppy: true,
+              }
+            );
+
+            const headers =
+              chess.header();
+
+            games.push({
+              id:
+                Date.now() +
+                index,
+
+              name:
+                `${headers.White || "White"} - ${
+                  headers.Black || "Black"
+                }`,
+
+              white:
+                headers.White || "",
+
+              black:
+                headers.Black || "",
+
+              event:
+                headers.Event || "",
+
+              opening:
+                headers.Opening || "",
+
+              year:
+                headers.Date || "",
+
+              pgn,
+            });
+          } catch (error) {
+            console.log(
+              "PGN error:",
+              error
+            );
+          }
+        }
       );
 
-      parts.forEach((pgn, index) => {
-        if (!pgn.trim()) {
-          return;
-        }
-
-        try {
-          const chess = new Chess();
-
-          chess.loadPgn(
-            pgn,
-            {
-              sloppy: true,
-            }
-          );
-
-          const headers = chess.header();
-
-          games.push({
-            id:
-              Date.now() +
-              index,
-
-            name:
-              `${headers.White || "White"} - ${
-                headers.Black || "Black"
-              }`,
-
-            white:
-              headers.White || "",
-
-            black:
-              headers.Black || "",
-
-            event:
-              headers.Event || "",
-
-            opening:
-              headers.Opening || "",
-
-            year:
-              headers.Date || "",
-
-            pgn,
-          });
-        } catch (error) {
-          console.log(
-            "PGN error:",
-            error
-          );
-        }
-      });
-
       if (!games.length) {
-        alert("No games found in PGN");
+        alert(
+          "No games found in PGN"
+        );
+
         return;
       }
 
@@ -231,18 +261,91 @@ export default function App() {
 
       saveBooks(updated);
 
-      setSelectedBook(newBook);
-      setSelectedGame(null);
+      setSelectedBook(
+        newBook
+      );
+
+      setSelectedGame(
+        null
+      );
     } catch (error) {
       console.error(
         "PGN import error:",
         error
       );
 
-      alert("PGN import error");
+      alert(
+        "PGN import error"
+      );
     }
 
     e.target.value = "";
+  }
+
+  // =========================================================
+  // GAME INFO
+  // =========================================================
+
+  function getGameInfo(game) {
+    try {
+      const chess =
+        new Chess();
+
+      chess.loadPgn(
+        game.pgn,
+        {
+          sloppy: true,
+        }
+      );
+
+      const history =
+        chess.history();
+
+      const headers =
+        chess.header();
+
+      /*
+       * chess.history() возвращает
+       * количество полуходов.
+       *
+       * Например:
+       * 56 полуходов = партия
+       * закончилась после 28-го
+       * хода чёрных.
+       *
+       * Поэтому показываем номер
+       * последнего полного хода.
+       */
+
+      const moveCount =
+        Math.ceil(
+          history.length / 2
+        );
+
+      let result =
+        headers.Result || "*";
+
+      /*
+       * Делаем ничью более красивой
+       * для отображения в интерфейсе.
+       */
+
+      if (
+        result === "1/2-1/2"
+      ) {
+        result = "½-½";
+      }
+
+      return {
+        moveCount,
+        result,
+      };
+    } catch {
+      return {
+        moveCount: 0,
+        result: "*",
+      };
+    }
   }
 
   // =========================================================
@@ -250,25 +353,30 @@ export default function App() {
   // =========================================================
 
   function deleteBook(id) {
-    const book = books.find(
-      (item) => item.id === id
-    );
+    const book =
+      books.find(
+        (item) =>
+          item.id === id
+      );
 
     if (!book) {
       return;
     }
 
-    const ok = window.confirm(
-      `Delete book "${book.title}"?`
-    );
+    const ok =
+      window.confirm(
+        `Delete book "${book.title}"?`
+      );
 
     if (!ok) {
       return;
     }
 
-    const updated = books.filter(
-      (item) => item.id !== id
-    );
+    const updated =
+      books.filter(
+        (item) =>
+          item.id !== id
+      );
 
     saveBooks(updated);
 
@@ -286,37 +394,47 @@ export default function App() {
   // =========================================================
 
   function renameBook(id) {
-    const book = books.find(
-      (item) => item.id === id
-    );
+    const book =
+      books.find(
+        (item) =>
+          item.id === id
+      );
 
     if (!book) {
       return;
     }
 
-    const name = window.prompt(
-      "New book name:",
-      book.title
-    );
+    const name =
+      window.prompt(
+        "New book name:",
+        book.title
+      );
 
-    if (!name || !name.trim()) {
+    if (
+      !name ||
+      !name.trim()
+    ) {
       return;
     }
 
-    const newName = name.trim();
+    const newName =
+      name.trim();
 
-    const updated = books.map(
-      (item) => {
-        if (item.id !== id) {
-          return item;
+    const updated =
+      books.map(
+        (item) => {
+          if (
+            item.id !== id
+          ) {
+            return item;
+          }
+
+          return {
+            ...item,
+            title: newName,
+          };
         }
-
-        return {
-          ...item,
-          title: newName,
-        };
-      }
-    );
+      );
 
     saveBooks(updated);
 
@@ -335,71 +453,85 @@ export default function App() {
   // GROUP BOOKS
   // =========================================================
 
-  const groupedBooks = useMemo(() => {
-    return books.reduce(
-      (acc, book) => {
-        const name =
-          book.folder || "General";
+  const groupedBooks =
+    useMemo(() => {
+      return books.reduce(
+        (
+          acc,
+          book
+        ) => {
+          const name =
+            book.folder ||
+            "General";
 
-        if (!acc[name]) {
-          acc[name] = [];
-        }
+          if (!acc[name]) {
+            acc[name] = [];
+          }
 
-        acc[name].push(book);
+          acc[name].push(
+            book
+          );
 
-        return acc;
-      },
-      {}
-    );
-  }, [books]);
+          return acc;
+        },
+        {}
+      );
+    }, [books]);
 
   // =========================================================
   // FILTER GAMES
   // =========================================================
 
-  const filteredGames = useMemo(() => {
-    if (!selectedBook) {
-      return [];
-    }
+  const filteredGames =
+    useMemo(() => {
+      if (!selectedBook) {
+        return [];
+      }
 
-    if (!search.trim()) {
-      return selectedBook.games || [];
-    }
+      if (!search.trim()) {
+        return (
+          selectedBook.games ||
+          []
+        );
+      }
 
-    const q =
-      search
-        .trim()
-        .toLowerCase();
+      const q =
+        search
+          .trim()
+          .toLowerCase();
 
-    return (
-      selectedBook.games || []
-    ).filter((game) => {
       return (
-        (game.white || "")
-          .toLowerCase()
-          .includes(q) ||
+        selectedBook.games ||
+        []
+      ).filter(
+        (game) => {
+          return (
+            (game.white || "")
+              .toLowerCase()
+              .includes(q) ||
 
-        (game.black || "")
-          .toLowerCase()
-          .includes(q) ||
+            (game.black || "")
+              .toLowerCase()
+              .includes(q) ||
 
-        (game.event || "")
-          .toLowerCase()
-          .includes(q) ||
+            (game.event || "")
+              .toLowerCase()
+              .includes(q) ||
 
-        (game.opening || "")
-          .toLowerCase()
-          .includes(q) ||
+            (game.opening || "")
+              .toLowerCase()
+              .includes(q) ||
 
-        (game.name || "")
-          .toLowerCase()
-          .includes(q)
+            (game.name || "")
+              .toLowerCase()
+              .includes(q)
+          );
+        }
       );
-    });
-  }, [
-    selectedBook,
-    search,
-  ]);
+    }, [
+      selectedBook,
+      search,
+    ]);
 
   // =========================================================
   // SELECT BOOK
@@ -407,7 +539,11 @@ export default function App() {
 
   function selectBook(book) {
     setSelectedBook(book);
-    setSelectedGame(null);
+
+    setSelectedGame(
+      null
+    );
+
     setSearch("");
   }
 
@@ -425,8 +561,10 @@ export default function App() {
             "chess-board-container"
           )
           ?.scrollIntoView({
-            behavior: "smooth",
-            block: "start",
+            behavior:
+              "smooth",
+            block:
+              "start",
           });
       }, 100);
     }
@@ -442,7 +580,8 @@ export default function App() {
         width: "100%",
         minHeight: "100vh",
         padding: 20,
-        boxSizing: "border-box",
+        boxSizing:
+          "border-box",
         fontFamily:
           "Arial, sans-serif",
       }}
@@ -457,20 +596,24 @@ export default function App() {
           gap: 12,
           flexWrap: "wrap",
           marginBottom: 20,
-          alignItems: "center",
+          alignItems:
+            "center",
         }}
       >
         {/* IMPORT PGN */}
 
         <label
           style={{
-            display: "inline-block",
-            background: "#1976d2",
+            display:
+              "inline-block",
+            background:
+              "#1976d2",
             color: "white",
             padding:
               "10px 16px",
             borderRadius: 8,
-            cursor: "pointer",
+            cursor:
+              "pointer",
             fontWeight: 600,
           }}
         >
@@ -499,7 +642,8 @@ export default function App() {
             padding:
               "10px 16px",
             borderRadius: 8,
-            cursor: "pointer",
+            cursor:
+              "pointer",
             border:
               "1px solid #ccc",
             background:
@@ -514,13 +658,16 @@ export default function App() {
 
         <label
           style={{
-            display: "inline-block",
-            background: "#4caf50",
+            display:
+              "inline-block",
+            background:
+              "#4caf50",
             color: "white",
             padding:
               "10px 16px",
             borderRadius: 8,
-            cursor: "pointer",
+            cursor:
+              "pointer",
             fontWeight: 600,
           }}
         >
@@ -667,7 +814,8 @@ export default function App() {
               >
                 No books yet.
                 <br />
-                Import a PGN file.
+                Import a PGN
+                file.
               </div>
             )}
 
@@ -683,7 +831,8 @@ export default function App() {
                     folderName
                   }
                   style={{
-                    marginBottom: 15,
+                    marginBottom:
+                      15,
                   }}
                 >
                   {/* FOLDER HEADER */}
@@ -707,7 +856,8 @@ export default function App() {
                         "pointer",
                       background:
                         "#eee",
-                      borderRadius: 8,
+                      borderRadius:
+                        8,
                       fontWeight: 700,
                       userSelect:
                         "none",
@@ -719,7 +869,9 @@ export default function App() {
                       ? "▼"
                       : "▶"}{" "}
                     📂{" "}
-                    {folderName}{" "}
+                    {
+                      folderName
+                    }{" "}
                     (
                     {
                       folderBooks.length
@@ -740,10 +892,14 @@ export default function App() {
                               book.id
                             }
                             style={{
-                              marginTop: 8,
-                              marginLeft: 10,
-                              padding: 10,
-                              borderRadius: 8,
+                              marginTop:
+                                8,
+                              marginLeft:
+                                10,
+                              padding:
+                                10,
+                              borderRadius:
+                                8,
 
                               border:
                                 selectedBook?.id ===
@@ -778,7 +934,8 @@ export default function App() {
                                   cursor:
                                     "pointer",
                                   flex: 1,
-                                  minWidth: 0,
+                                  minWidth:
+                                    0,
                                 }}
                               >
                                 <div
@@ -795,10 +952,12 @@ export default function App() {
 
                                 <div
                                   style={{
-                                    fontSize: 12,
+                                    fontSize:
+                                      12,
                                     opacity:
                                       0.6,
-                                    marginTop: 4,
+                                    marginTop:
+                                      4,
                                   }}
                                 >
                                   {
@@ -941,76 +1100,124 @@ export default function App() {
               (
                 game,
                 index
-              ) => (
-                <div
-                  key={game.id}
-                  onClick={() =>
-                    selectGame(
-                      game
-                    )
-                  }
-                  style={{
-                    padding: 10,
-                    marginBottom: 8,
-                    cursor:
-                      "pointer",
-                    borderRadius: 8,
+              ) => {
+                const gameInfo =
+                  getGameInfo(
+                    game
+                  );
 
-                    border:
-                      selectedGame?.id ===
-                      game.id
-                        ? "2px solid #ff9800"
-                        : "1px solid #ddd",
-
-                    background:
-                      selectedGame?.id ===
-                      game.id
-                        ? "#fff3cd"
-                        : "white",
-                  }}
-                >
+                return (
                   <div
+                    key={
+                      game.id
+                    }
+                    onClick={() =>
+                      selectGame(
+                        game
+                      )
+                    }
                     style={{
-                      wordBreak:
-                        "break-word",
+                      padding: 10,
+                      marginBottom:
+                        8,
+                      cursor:
+                        "pointer",
+                      borderRadius:
+                        8,
+
+                      border:
+                        selectedGame?.id ===
+                        game.id
+                          ? "2px solid #ff9800"
+                          : "1px solid #ddd",
+
+                      background:
+                        selectedGame?.id ===
+                        game.id
+                          ? "#fff3cd"
+                          : "white",
                     }}
                   >
-                    ♟{" "}
-                    {index + 1}.{" "}
-                    {game.name}
-                  </div>
+                    {/* GAME NAME */}
 
-                  {game.opening && (
+                    <div
+                      style={{
+                        wordBreak:
+                          "break-word",
+                      }}
+                    >
+                      ♟{" "}
+                      {index + 1}.{" "}
+                      {game.name}
+                    </div>
+
+                    {/* MOVES + RESULT */}
+
                     <div
                       style={{
                         fontSize: 12,
-                        opacity:
-                          0.6,
-                        marginTop: 4,
+                        marginTop: 5,
+                        opacity: 0.7,
                       }}
                     >
-                      {
-                        game.opening
-                      }
-                    </div>
-                  )}
+                      {gameInfo.moveCount}{" "}
+                      {gameInfo.moveCount ===
+                      1
+                        ? "ход"
+                        : gameInfo.moveCount >=
+                            2 &&
+                          gameInfo.moveCount <=
+                            4
+                          ? "хода"
+                          : "ходов"}
 
-                  {game.event && (
-                    <div
-                      style={{
-                        fontSize: 11,
-                        opacity:
-                          0.5,
-                        marginTop: 2,
-                      }}
-                    >
-                      {
-                        game.event
-                      }
+                      {" · "}
+
+                      <strong>
+                        {
+                          gameInfo.result
+                        }
+                      </strong>
                     </div>
-                  )}
-                </div>
-              )
+
+                    {/* OPENING */}
+
+                    {game.opening && (
+                      <div
+                        style={{
+                          fontSize: 12,
+                          opacity:
+                            0.6,
+                          marginTop:
+                            4,
+                        }}
+                      >
+                        {
+                          game.opening
+                        }
+                      </div>
+                    )}
+
+                    {/* EVENT */}
+
+                    {game.event && (
+                      <div
+                        style={{
+                          fontSize: 11,
+                          opacity:
+                            0.5,
+                          marginTop:
+                            2,
+                        }}
+                      >
+                        {
+                          game.event
+                        }
+                      </div>
+                    )}
+                  </div>
+                );
+              }
             )}
           </div>
         </div>

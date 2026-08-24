@@ -1,5 +1,4 @@
-﻿
-import { useEffect, useRef, useState } from "react";
+﻿import { useEffect, useRef, useState } from "react";
 import { Chess } from "chess.js";
 import { Chessground } from "chessground";
 
@@ -14,6 +13,16 @@ export default function Board({ pgn }) {
   const engineRef = useRef(null);
   const engineReadyRef = useRef(false);
   const engineStartingRef = useRef(false);
+
+  // Сторона, с точки зрения которой Stockfish
+  // считает текущую анализируемую позицию.
+  //
+  // Stockfish сообщает score относительно
+  // стороны, которая ходит.
+  //
+  // Мы используем этот ref, чтобы всегда
+  // переводить оценку в перспективу БЕЛЫХ.
+  const evaluationSideRef = useRef("w");
 
   const timerRef = useRef(null);
   const searchIdRef = useRef(0);
@@ -114,6 +123,9 @@ export default function Board({ pgn }) {
     setBestMove("");
     setPrincipalVariation("");
     setEngineError("");
+
+    // Сбрасываем сторону оценки.
+    evaluationSideRef.current = "w";
   }, [pgn]);
 
   // =========================================================
@@ -414,6 +426,10 @@ export default function Board({ pgn }) {
       return;
     }
 
+    // =======================================================
+    // DEPTH
+    // =======================================================
+
     const depthMatch =
       line.match(
         /\bdepth\s+(\d+)/
@@ -424,6 +440,10 @@ export default function Board({ pgn }) {
         Number(depthMatch[1])
       );
     }
+
+    // =======================================================
+    // SCORE
+    // =======================================================
 
     const scoreMatch =
       line.match(
@@ -437,25 +457,48 @@ export default function Board({ pgn }) {
       const raw =
         Number(scoreMatch[2]);
 
-      const fen =
-        getCurrentFen();
-
-      const currentSide =
-        fen
-          ? fen.split(" ")[1]
-          : "w";
+      /*
+       * Stockfish сообщает score
+       * относительно стороны, которая
+       * ходит в анализируемой позиции.
+       *
+       * Нам нужна оценка исключительно
+       * с точки зрения БЕЛЫХ.
+       *
+       * Поэтому:
+       *
+       * position: White to move
+       * Stockfish +1.20
+       * => White +1.20
+       *
+       * position: Black to move
+       * Stockfish +1.20
+       * => White -1.20
+       */
 
       let whiteScore = raw;
 
-      if (currentSide === "b") {
+      if (
+        evaluationSideRef.current === "b"
+      ) {
         whiteScore = -raw;
       }
+
+      // =====================================================
+      // CENTIPAWNS
+      // =====================================================
 
       if (scoreType === "cp") {
         setEvaluation(
           whiteScore / 100
         );
-      } else {
+      }
+
+      // =====================================================
+      // MATE
+      // =====================================================
+
+      else {
         setEvaluation(
           whiteScore > 0
             ? `+M${Math.abs(raw)}`
@@ -463,6 +506,10 @@ export default function Board({ pgn }) {
         );
       }
     }
+
+    // =======================================================
+    // PRINCIPAL VARIATION
+    // =======================================================
 
     const pvMatch =
       line.match(
@@ -546,7 +593,6 @@ export default function Board({ pgn }) {
 
       worker.onmessage =
         handleEngineMessage;
-  
 
       worker.onerror =
         handleEngineError;
@@ -587,73 +633,73 @@ export default function Board({ pgn }) {
       return null;
     }
   }
-  
- // =========================================================
-// STOCKFISH BEST MOVE ARROW
-// =========================================================
 
-useEffect(() => {
-  if (!cgRef.current) {
-    return;
-  }
+  // =========================================================
+  // STOCKFISH BEST MOVE ARROW
+  // =========================================================
 
-  // Если лучшего хода пока нет —
-  // убираем стрелку Stockfish.
-  if (
-    !bestMove ||
-    bestMove.length < 4
-  ) {
+  useEffect(() => {
+    if (!cgRef.current) {
+      return;
+    }
+
+    // Если лучшего хода пока нет —
+    // убираем стрелку Stockfish.
+    if (
+      !bestMove ||
+      bestMove.length < 4
+    ) {
+      try {
+        cgRef.current.set({
+          drawable: {
+            shapes: []
+          }
+        });
+      } catch (error) {
+        console.error(
+          "Stockfish arrow clear error:",
+          error
+        );
+      }
+
+      return;
+    }
+
+    const from =
+      bestMove.substring(0, 2);
+
+    const to =
+      bestMove.substring(2, 4);
+
+    const squarePattern =
+      /^[a-h][1-8]$/;
+
+    if (
+      !squarePattern.test(from) ||
+      !squarePattern.test(to)
+    ) {
+      return;
+    }
+
     try {
       cgRef.current.set({
         drawable: {
-          shapes: []
+          shapes: [
+            {
+              orig: from,
+              dest: to,
+              brush: "green"
+            }
+          ]
         }
       });
     } catch (error) {
       console.error(
-        "Stockfish arrow clear error:",
+        "Stockfish arrow error:",
         error
       );
     }
-
-    return;
-  }
-
-  const from =
-    bestMove.substring(0, 2);
-
-  const to =
-    bestMove.substring(2, 4);
-
-  const squarePattern =
-    /^[a-h][1-8]$/;
-
-  if (
-    !squarePattern.test(from) ||
-    !squarePattern.test(to)
-  ) {
-    return;
-  }
-
-  try {
-    cgRef.current.set({
-      drawable: {
-        shapes: [
-          {
-            orig: from,
-            dest: to,
-            brush: "green"
-          }
-        ]
-      }
-    });
-  } catch (error) {
-    console.error(
-      "Stockfish arrow error:",
-      error
-    );
-  }
-}, [bestMove]);
+  }, [bestMove]);
 
   // =========================================================
   // START ENGINE SEARCH
@@ -678,17 +724,39 @@ useEffect(() => {
       return;
     }
 
+    // =======================================================
+    // ЗАПОМИНАЕМ СТОРОНУ АНАЛИЗИРУЕМОЙ ПОЗИЦИИ
+    // =======================================================
+
+    const sideToMove =
+      fen.split(" ")[1] || "w";
+
+    evaluationSideRef.current =
+      sideToMove;
+
+    // =======================================================
+    // STOP PREVIOUS SEARCH
+    // =======================================================
+
     try {
       engine.postMessage("stop");
     } catch {
       // ignore
     }
 
+    // =======================================================
+    // NEW GAME
+    // =======================================================
+
     try {
       engine.postMessage("ucinewgame");
     } catch {
       // ignore
     }
+
+    // =======================================================
+    // POSITION
+    // =======================================================
 
     try {
       engine.postMessage(
@@ -773,6 +841,13 @@ useEffect(() => {
     setDepth(null);
     setBestMove("");
     setPrincipalVariation("");
+
+    // Сразу запоминаем сторону позиции.
+    // Это дополнительная защита от того,
+    // что пользователь может переключить
+    // ход во время анализа.
+    evaluationSideRef.current =
+      fen.split(" ")[1] || "w";
 
     const engine =
       loadEngine();
@@ -922,6 +997,9 @@ useEffect(() => {
     setBestMove("");
     setPrincipalVariation("");
     setEngineError("");
+
+    // Сбрасываем сторону до следующего анализа.
+    evaluationSideRef.current = "w";
   }
 
   // =========================================================

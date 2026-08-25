@@ -1,7 +1,20 @@
-﻿import { useMemo, useState } from "react";
+﻿import {
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+
 import { Chess } from "chess.js";
 
 import Board from "./components/Board.jsx";
+
+import {
+  getBooks,
+  saveBooks,
+  addBook,
+  updateBook,
+  deleteBook as deleteBookFromDB,
+} from "./storage.js";
 
 export default function App() {
   // =========================================================
@@ -14,54 +27,107 @@ export default function App() {
   // BOOKS
   // =========================================================
 
-  const [books, setBooks] = useState(() => {
-    const saved = localStorage.getItem("chess-books");
+  const [books, setBooks] = useState([]);
 
-    if (!saved) {
-      return [];
-    }
-
-    try {
-      return JSON.parse(saved);
-    } catch {
-      return [];
-    }
-  });
+  const [loading, setLoading] = useState(true);
 
   // =========================================================
   // FOLDERS
   // =========================================================
 
-  const [folder, setFolder] = useState("General");
+  const [folder, setFolder] =
+    useState("General");
 
-  const [openFolders, setOpenFolders] = useState({
-    General: true,
-  });
+  const [openFolders, setOpenFolders] =
+    useState({
+      General: true,
+    });
 
   // =========================================================
   // SELECTION
   // =========================================================
 
-  const [selectedBook, setSelectedBook] = useState(null);
-  const [selectedGame, setSelectedGame] = useState(null);
+  const [selectedBook, setSelectedBook] =
+    useState(null);
+
+  const [selectedGame, setSelectedGame] =
+    useState(null);
 
   // =========================================================
   // SEARCH
   // =========================================================
 
-  const [search, setSearch] = useState("");
+  const [search, setSearch] =
+    useState("");
+
+  // =========================================================
+  // LOAD BOOKS FROM INDEXEDDB
+  // =========================================================
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadBooks() {
+      try {
+        const data = await getBooks();
+
+        if (!cancelled) {
+          setBooks(
+            Array.isArray(data)
+              ? data
+              : []
+          );
+        }
+      } catch (error) {
+        console.error(
+          "IndexedDB load error:",
+          error
+        );
+
+        if (!cancelled) {
+          alert(
+            "Cannot load chess library"
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
+    loadBooks();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // =========================================================
   // SAVE BOOKS
   // =========================================================
+  //
+  // Used mainly for backup restore.
+  //
+  // IMPORTANT:
+  // Nothing is saved to localStorage.
+  //
 
-  function saveBooks(data) {
+  async function saveBooksToStorage(data) {
     setBooks(data);
 
-    localStorage.setItem(
-      "chess-books",
-      JSON.stringify(data)
-    );
+    try {
+      await saveBooks(data);
+    } catch (error) {
+      console.error(
+        "IndexedDB save error:",
+        error
+      );
+
+      alert(
+        "Cannot save library"
+      );
+    }
   }
 
   // =========================================================
@@ -78,7 +144,8 @@ export default function App() {
     const blob = new Blob(
       [data],
       {
-        type: "application/json",
+        type:
+          "application/json",
       }
     );
 
@@ -106,7 +173,7 @@ export default function App() {
   // IMPORT BACKUP
   // =========================================================
 
-  function importLibrary(e) {
+  async function importLibrary(e) {
     const file =
       e.target.files?.[0];
 
@@ -114,40 +181,44 @@ export default function App() {
       return;
     }
 
-    const reader =
-      new FileReader();
+    try {
+      const text =
+        await file.text();
 
-    reader.onload = (event) => {
-      try {
-        const data =
-          JSON.parse(
-            event.target.result
-          );
+      const data =
+        JSON.parse(text);
 
-        if (!Array.isArray(data)) {
-          alert(
-            "Wrong backup file"
-          );
-
-          return;
-        }
-
-        saveBooks(data);
-
-        setSelectedBook(null);
-        setSelectedGame(null);
-
+      if (!Array.isArray(data)) {
         alert(
-          "Library restored"
+          "Wrong backup file"
         );
-      } catch {
-        alert(
-          "Import error"
-        );
+
+        return;
       }
-    };
 
-    reader.readAsText(file);
+      await saveBooksToStorage(
+        data
+      );
+
+      setSelectedBook(null);
+
+      setSelectedGame(null);
+
+      setSearch("");
+
+      alert(
+        "Library restored"
+      );
+    } catch (error) {
+      console.error(
+        "Backup import error:",
+        error
+      );
+
+      alert(
+        "Import error"
+      );
+    }
 
     e.target.value = "";
   }
@@ -201,20 +272,17 @@ export default function App() {
               chess.header();
 
             /*
-             * chess.history() returns
-             * the number of half-moves.
-             *
-             * We convert it to the
-             * number of the last chess move.
-             *
-             * Example:
-             *
-             * 56 half-moves = move 28
-             * 57 half-moves = move 29
+             * Number of half-moves.
              */
 
             const history =
               chess.history();
+
+            /*
+             * Convert half-moves
+             * to the number of the
+             * last chess move.
+             */
 
             const moveCount =
               Math.ceil(
@@ -222,14 +290,16 @@ export default function App() {
               );
 
             let result =
-              headers.Result || "*";
+              headers.Result ||
+              "*";
 
             /*
-             * Beautiful display for a draw.
+             * Display draw nicely.
              */
 
             if (
-              result === "1/2-1/2"
+              result ===
+              "1/2-1/2"
             ) {
               result = "½-½";
             }
@@ -292,12 +362,28 @@ export default function App() {
         games,
       };
 
-      const updated = [
-        ...books,
-        newBook,
-      ];
+      /*
+       * Save ONLY this new book
+       * to IndexedDB.
+       *
+       * We don't rewrite the whole
+       * library unnecessarily.
+       */
 
-      saveBooks(updated);
+      await addBook(
+        newBook
+      );
+
+      /*
+       * Update React state.
+       */
+
+      setBooks(
+        (prev) => [
+          ...prev,
+          newBook,
+        ]
+      );
 
       setSelectedBook(
         newBook
@@ -305,6 +391,19 @@ export default function App() {
 
       setSelectedGame(
         null
+      );
+
+      setSearch("");
+
+      /*
+       * Automatically open folder.
+       */
+
+      setOpenFolders(
+        (prev) => ({
+          ...prev,
+          [folder]: true,
+        })
       );
     } catch (error) {
       console.error(
@@ -324,7 +423,7 @@ export default function App() {
   // DELETE BOOK
   // =========================================================
 
-  function deleteBook(id) {
+  async function deleteBook(id) {
     const book =
       books.find(
         (item) =>
@@ -344,20 +443,40 @@ export default function App() {
       return;
     }
 
-    const updated =
-      books.filter(
-        (item) =>
-          item.id !== id
+    try {
+      await deleteBookFromDB(
+        id
       );
 
-    saveBooks(updated);
+      setBooks(
+        (prev) =>
+          prev.filter(
+            (item) =>
+              item.id !== id
+          )
+      );
 
-    if (
-      selectedBook &&
-      selectedBook.id === id
-    ) {
-      setSelectedBook(null);
-      setSelectedGame(null);
+      if (
+        selectedBook &&
+        selectedBook.id === id
+      ) {
+        setSelectedBook(
+          null
+        );
+
+        setSelectedGame(
+          null
+        );
+      }
+    } catch (error) {
+      console.error(
+        "Delete book error:",
+        error
+      );
+
+      alert(
+        "Cannot delete book"
+      );
     }
   }
 
@@ -365,7 +484,7 @@ export default function App() {
   // RENAME BOOK
   // =========================================================
 
-  function renameBook(id) {
+  async function renameBook(id) {
     const book =
       books.find(
         (item) =>
@@ -392,32 +511,43 @@ export default function App() {
     const newName =
       name.trim();
 
-    const updated =
-      books.map(
-        (item) => {
-          if (
-            item.id !== id
-          ) {
-            return item;
-          }
+    const updatedBook = {
+      ...book,
+      title: newName,
+    };
 
-          return {
-            ...item,
-            title: newName,
-          };
-        }
+    try {
+      await updateBook(
+        updatedBook
       );
 
-    saveBooks(updated);
+      setBooks(
+        (prev) =>
+          prev.map(
+            (item) =>
+              item.id === id
+                ? updatedBook
+                : item
+          )
+      );
 
-    if (
-      selectedBook &&
-      selectedBook.id === id
-    ) {
-      setSelectedBook({
-        ...selectedBook,
-        title: newName,
-      });
+      if (
+        selectedBook &&
+        selectedBook.id === id
+      ) {
+        setSelectedBook(
+          updatedBook
+        );
+      }
+    } catch (error) {
+      console.error(
+        "Rename book error:",
+        error
+      );
+
+      alert(
+        "Cannot rename book"
+      );
     }
   }
 
@@ -474,29 +604,26 @@ export default function App() {
           .toLowerCase();
 
       return games.filter(
-        (game) => {
-          return (
-            (game.white || "")
-              .toLowerCase()
-              .includes(q) ||
+        (game) =>
+          (game.white || "")
+            .toLowerCase()
+            .includes(q) ||
 
-            (game.black || "")
-              .toLowerCase()
-              .includes(q) ||
+          (game.black || "")
+            .toLowerCase()
+            .includes(q) ||
 
-            (game.event || "")
-              .toLowerCase()
-              .includes(q) ||
+          (game.event || "")
+            .toLowerCase()
+            .includes(q) ||
 
-            (game.opening || "")
-              .toLowerCase()
-              .includes(q) ||
+          (game.opening || "")
+            .toLowerCase()
+            .includes(q) ||
 
-            (game.name || "")
-              .toLowerCase()
-              .includes(q)
-          );
-        }
+          (game.name || "")
+            .toLowerCase()
+            .includes(q)
       );
     }, [
       selectedBook,
@@ -508,7 +635,9 @@ export default function App() {
   // =========================================================
 
   function selectBook(book) {
-    setSelectedBook(book);
+    setSelectedBook(
+      book
+    );
 
     setSelectedGame(
       null
@@ -522,7 +651,9 @@ export default function App() {
   // =========================================================
 
   function selectGame(game) {
-    setSelectedGame(game);
+    setSelectedGame(
+      game
+    );
 
     if (isMobile) {
       setTimeout(() => {
@@ -533,11 +664,51 @@ export default function App() {
           ?.scrollIntoView({
             behavior:
               "smooth",
+
             block:
               "start",
           });
       }, 100);
     }
+  }
+
+  // =========================================================
+  // MOVE LABEL
+  // =========================================================
+
+  function getMoveLabel(
+    count
+  ) {
+    if (count === 1) {
+      return "ход";
+    }
+
+    if (
+      count >= 2 &&
+      count <= 4
+    ) {
+      return "хода";
+    }
+
+    return "ходов";
+  }
+
+  // =========================================================
+  // LOADING
+  // =========================================================
+
+  if (loading) {
+    return (
+      <div
+        style={{
+          padding: 30,
+          fontFamily:
+            "Arial, sans-serif",
+        }}
+      >
+        Loading chess library...
+      </div>
+    );
   }
 
   // =========================================================
@@ -1126,15 +1297,10 @@ export default function App() {
                   >
                     {game.moveCount ||
                       0}{" "}
-                    {game.moveCount ===
-                    1
-                      ? "ход"
-                      : game.moveCount >=
-                          2 &&
-                        game.moveCount <=
-                          4
-                      ? "хода"
-                      : "ходов"}
+                    {getMoveLabel(
+                      game.moveCount ||
+                        0
+                    )}
 
                     {" · "}
 
@@ -1194,17 +1360,10 @@ export default function App() {
           style={{
             flex: 1,
             minWidth: 0,
+
             width: isMobile
               ? "100%"
               : "auto",
-
-            /*
-             * Board is part of the main flex row on desktop.
-             *
-             * On Android it comes immediately after
-             * Books and Games, and Board.jsx itself
-             * contains the analysis panel.
-             */
           }}
         >
           {selectedGame ? (

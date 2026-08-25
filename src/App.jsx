@@ -200,6 +200,40 @@ export default function App() {
             const headers =
               chess.header();
 
+            /*
+             * chess.history() returns
+             * the number of half-moves.
+             *
+             * We convert it to the
+             * number of the last chess move.
+             *
+             * Example:
+             *
+             * 56 half-moves = move 28
+             * 57 half-moves = move 29
+             */
+
+            const history =
+              chess.history();
+
+            const moveCount =
+              Math.ceil(
+                history.length / 2
+              );
+
+            let result =
+              headers.Result || "*";
+
+            /*
+             * Beautiful display for a draw.
+             */
+
+            if (
+              result === "1/2-1/2"
+            ) {
+              result = "½-½";
+            }
+
             games.push({
               id:
                 Date.now() +
@@ -224,6 +258,10 @@ export default function App() {
 
               year:
                 headers.Date || "",
+
+              moveCount,
+
+              result,
 
               pgn,
             });
@@ -280,72 +318,6 @@ export default function App() {
     }
 
     e.target.value = "";
-  }
-
-  // =========================================================
-  // GAME INFO
-  // =========================================================
-
-  function getGameInfo(game) {
-    try {
-      const chess =
-        new Chess();
-
-      chess.loadPgn(
-        game.pgn,
-        {
-          sloppy: true,
-        }
-      );
-
-      const history =
-        chess.history();
-
-      const headers =
-        chess.header();
-
-      /*
-       * chess.history() возвращает
-       * количество полуходов.
-       *
-       * Например:
-       * 56 полуходов = партия
-       * закончилась после 28-го
-       * хода чёрных.
-       *
-       * Поэтому показываем номер
-       * последнего полного хода.
-       */
-
-      const moveCount =
-        Math.ceil(
-          history.length / 2
-        );
-
-      let result =
-        headers.Result || "*";
-
-      /*
-       * Делаем ничью более красивой
-       * для отображения в интерфейсе.
-       */
-
-      if (
-        result === "1/2-1/2"
-      ) {
-        result = "½-½";
-      }
-
-      return {
-        moveCount,
-        result,
-      };
-    } catch {
-      return {
-        moveCount: 0,
-        result: "*",
-      };
-    }
   }
 
   // =========================================================
@@ -488,11 +460,12 @@ export default function App() {
         return [];
       }
 
+      const games =
+        selectedBook.games ||
+        [];
+
       if (!search.trim()) {
-        return (
-          selectedBook.games ||
-          []
-        );
+        return games;
       }
 
       const q =
@@ -500,10 +473,7 @@ export default function App() {
           .trim()
           .toLowerCase();
 
-      return (
-        selectedBook.games ||
-        []
-      ).filter(
+      return games.filter(
         (game) => {
           return (
             (game.white || "")
@@ -1100,124 +1070,117 @@ export default function App() {
               (
                 game,
                 index
-              ) => {
-                const gameInfo =
-                  getGameInfo(
-                    game
-                  );
+              ) => (
+                <div
+                  key={
+                    game.id
+                  }
+                  onClick={() =>
+                    selectGame(
+                      game
+                    )
+                  }
+                  style={{
+                    padding: 10,
+                    marginBottom:
+                      8,
+                    cursor:
+                      "pointer",
+                    borderRadius:
+                      8,
 
-                return (
-                  <div
-                    key={
+                    border:
+                      selectedGame?.id ===
                       game.id
-                    }
-                    onClick={() =>
-                      selectGame(
-                        game
-                      )
-                    }
+                        ? "2px solid #ff9800"
+                        : "1px solid #ddd",
+
+                    background:
+                      selectedGame?.id ===
+                      game.id
+                        ? "#fff3cd"
+                        : "white",
+                  }}
+                >
+                  {/* GAME NAME */}
+
+                  <div
                     style={{
-                      padding: 10,
-                      marginBottom:
-                        8,
-                      cursor:
-                        "pointer",
-                      borderRadius:
-                        8,
-
-                      border:
-                        selectedGame?.id ===
-                        game.id
-                          ? "2px solid #ff9800"
-                          : "1px solid #ddd",
-
-                      background:
-                        selectedGame?.id ===
-                        game.id
-                          ? "#fff3cd"
-                          : "white",
+                      wordBreak:
+                        "break-word",
                     }}
                   >
-                    {/* GAME NAME */}
+                    ♟{" "}
+                    {index + 1}.{" "}
+                    {game.name}
+                  </div>
 
-                    <div
-                      style={{
-                        wordBreak:
-                          "break-word",
-                      }}
-                    >
-                      ♟{" "}
-                      {index + 1}.{" "}
-                      {game.name}
-                    </div>
+                  {/* MOVES + RESULT */}
 
-                    {/* MOVES + RESULT */}
+                  <div
+                    style={{
+                      fontSize: 12,
+                      marginTop: 5,
+                      opacity: 0.7,
+                    }}
+                  >
+                    {game.moveCount ||
+                      0}{" "}
+                    {game.moveCount ===
+                    1
+                      ? "ход"
+                      : game.moveCount >=
+                          2 &&
+                        game.moveCount <=
+                          4
+                      ? "хода"
+                      : "ходов"}
 
+                    {" · "}
+
+                    <strong>
+                      {game.result ||
+                        "*"}
+                    </strong>
+                  </div>
+
+                  {/* OPENING */}
+
+                  {game.opening && (
                     <div
                       style={{
                         fontSize: 12,
-                        marginTop: 5,
-                        opacity: 0.7,
+                        opacity:
+                          0.6,
+                        marginTop:
+                          4,
                       }}
                     >
-                      {gameInfo.moveCount}{" "}
-                      {gameInfo.moveCount ===
-                      1
-                        ? "ход"
-                        : gameInfo.moveCount >=
-                            2 &&
-                          gameInfo.moveCount <=
-                            4
-                          ? "хода"
-                          : "ходов"}
-
-                      {" · "}
-
-                      <strong>
-                        {
-                          gameInfo.result
-                        }
-                      </strong>
+                      {
+                        game.opening
+                      }
                     </div>
+                  )}
 
-                    {/* OPENING */}
+                  {/* EVENT */}
 
-                    {game.opening && (
-                      <div
-                        style={{
-                          fontSize: 12,
-                          opacity:
-                            0.6,
-                          marginTop:
-                            4,
-                        }}
-                      >
-                        {
-                          game.opening
-                        }
-                      </div>
-                    )}
-
-                    {/* EVENT */}
-
-                    {game.event && (
-                      <div
-                        style={{
-                          fontSize: 11,
-                          opacity:
-                            0.5,
-                          marginTop:
-                            2,
-                        }}
-                      >
-                        {
-                          game.event
-                        }
-                      </div>
-                    )}
-                  </div>
-                );
-              }
+                  {game.event && (
+                    <div
+                      style={{
+                        fontSize: 11,
+                        opacity:
+                          0.5,
+                        marginTop:
+                          2,
+                      }}
+                    >
+                      {
+                        game.event
+                      }
+                    </div>
+                  )}
+                </div>
+              )
             )}
           </div>
         </div>
@@ -1236,7 +1199,6 @@ export default function App() {
               : "auto",
 
             /*
-             * IMPORTANT:
              * Board is part of the main flex row on desktop.
              *
              * On Android it comes immediately after

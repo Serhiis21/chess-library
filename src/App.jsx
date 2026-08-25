@@ -1,16 +1,10 @@
-﻿import {
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
-
+﻿import { useEffect, useMemo, useState } from "react";
 import { Chess } from "chess.js";
 
 import Board from "./components/Board.jsx";
 
 import {
   getBooks,
-  saveBooks,
   addBook,
   updateBook,
   deleteBook as deleteBookFromDB,
@@ -29,49 +23,69 @@ export default function App() {
 
   const [books, setBooks] = useState([]);
 
-  const [loading, setLoading] = useState(true);
+  const [loadingBooks, setLoadingBooks] = useState(true);
 
   // =========================================================
   // FOLDERS
   // =========================================================
 
-  const [folder, setFolder] =
-    useState("General");
+  const folders = [
+    "General",
+    "Miniatures",
+    "Openings",
+    "Masters",
+    "Tactics",
+    "Endgames",
+  ];
 
-  const [openFolders, setOpenFolders] =
-    useState({
-      General: true,
-    });
+  const [folder, setFolder] = useState("General");
+
+  const [openFolders, setOpenFolders] = useState({
+    General: true,
+  });
 
   // =========================================================
   // SELECTION
   // =========================================================
 
-  const [selectedBook, setSelectedBook] =
-    useState(null);
+  const [selectedBook, setSelectedBook] = useState(null);
 
-  const [selectedGame, setSelectedGame] =
-    useState(null);
+  const [selectedGame, setSelectedGame] = useState(null);
 
   // =========================================================
   // SEARCH
   // =========================================================
 
-  const [search, setSearch] =
-    useState("");
+  const [search, setSearch] = useState("");
+
+  // =========================================================
+  // PGN IMPORT DIALOG
+  // =========================================================
+
+  const [showImportDialog, setShowImportDialog] =
+    useState(false);
+
+  const [pendingPGNFile, setPendingPGNFile] =
+    useState(null);
+
+  const [showFolderSelection, setShowFolderSelection] =
+    useState(false);
+
+  const [importingPGN, setImportingPGN] =
+    useState(false);
 
   // =========================================================
   // LOAD BOOKS FROM INDEXEDDB
   // =========================================================
 
   useEffect(() => {
-    let cancelled = false;
+    let mounted = true;
 
     async function loadBooks() {
       try {
         const data = await getBooks();
 
-        if (!cancelled) {
+        if (mounted) {
           setBooks(
             Array.isArray(data)
               ? data
@@ -84,14 +98,14 @@ export default function App() {
           error
         );
 
-        if (!cancelled) {
+        if (mounted) {
           alert(
-            "Cannot load chess library"
+            "Ошибка загрузки библиотеки из IndexedDB."
           );
         }
       } finally {
-        if (!cancelled) {
-          setLoading(false);
+        if (mounted) {
+          setLoadingBooks(false);
         }
       }
     }
@@ -99,81 +113,15 @@ export default function App() {
     loadBooks();
 
     return () => {
-      cancelled = true;
+      mounted = false;
     };
   }, []);
 
   // =========================================================
-  // SAVE BOOKS
-  // =========================================================
-  //
-  // Used mainly for backup restore.
-  //
-  // IMPORTANT:
-  // Nothing is saved to localStorage.
-  //
-
-  async function saveBooksToStorage(data) {
-    setBooks(data);
-
-    try {
-      await saveBooks(data);
-    } catch (error) {
-      console.error(
-        "IndexedDB save error:",
-        error
-      );
-
-      alert(
-        "Cannot save library"
-      );
-    }
-  }
-
-  // =========================================================
-  // EXPORT
+  // OPEN PGN FILE
   // =========================================================
 
-  function exportLibrary() {
-    const data = JSON.stringify(
-      books,
-      null,
-      2
-    );
-
-    const blob = new Blob(
-      [data],
-      {
-        type:
-          "application/json",
-      }
-    );
-
-    const url =
-      URL.createObjectURL(blob);
-
-    const a =
-      document.createElement("a");
-
-    a.href = url;
-
-    a.download =
-      "chess-library-backup.json";
-
-    document.body.appendChild(a);
-
-    a.click();
-
-    document.body.removeChild(a);
-
-    URL.revokeObjectURL(url);
-  }
-
-  // =========================================================
-  // IMPORT BACKUP
-  // =========================================================
-
-  async function importLibrary(e) {
+  function openPGNImport(e) {
     const file =
       e.target.files?.[0];
 
@@ -181,75 +129,92 @@ export default function App() {
       return;
     }
 
-    try {
-      const text =
-        await file.text();
+    /*
+     * Сохраняем файл.
+     *
+     * Сам импорт пока НЕ выполняем.
+     *
+     * Сначала пользователь должен
+     * открыть окно выбора папки.
+     */
 
-      const data =
-        JSON.parse(text);
+    setPendingPGNFile(file);
 
-      if (!Array.isArray(data)) {
-        alert(
-          "Wrong backup file"
-        );
+    setShowImportDialog(true);
 
-        return;
-      }
-
-      await saveBooksToStorage(
-        data
-      );
-
-      setSelectedBook(null);
-
-      setSelectedGame(null);
-
-      setSearch("");
-
-      alert(
-        "Library restored"
-      );
-    } catch (error) {
-      console.error(
-        "Backup import error:",
-        error
-      );
-
-      alert(
-        "Import error"
-      );
-    }
+    setShowFolderSelection(false);
 
     e.target.value = "";
   }
 
   // =========================================================
-  // PGN IMPORT
+  // CANCEL PGN IMPORT
   // =========================================================
 
-  async function handlePGNFile(e) {
-    const file =
-      e.target.files?.[0];
-
-    if (!file) {
+  function cancelPGNImport() {
+    if (importingPGN) {
       return;
     }
 
+    setShowImportDialog(false);
+
+    setShowFolderSelection(false);
+
+    setPendingPGNFile(null);
+  }
+
+  // =========================================================
+  // SHOW FOLDER SELECTION
+  // =========================================================
+
+  function openFolderSelection() {
+    if (!pendingPGNFile) {
+      return;
+    }
+
+    setShowFolderSelection(true);
+  }
+
+  // =========================================================
+  // IMPORT PGN AFTER FOLDER SELECTION
+  // =========================================================
+
+  async function importPGNIntoFolder(
+    selectedFolder
+  ) {
+    if (!pendingPGNFile) {
+      return;
+    }
+
+    if (importingPGN) {
+      return;
+    }
+
+    setImportingPGN(true);
+
     try {
       const text =
-        await file.text();
-
-      const games = [];
+        await pendingPGNFile.text();
 
       /*
-       * PGN files normally contain
-       * games starting with [Event "..."].
+       * Разделяем PGN на партии.
+       *
+       * Основной вариант:
+       * [Event "..."]
+       *
+       * Также учитываем возможные
+       * пустые строки перед партией.
        */
 
       const parts =
         text.split(
           /\r?\n(?=\[Event\s)/i
         );
+
+      const games = [];
+
+      const baseId =
+        Date.now();
 
       parts.forEach(
         (pgn, index) => {
@@ -271,17 +236,11 @@ export default function App() {
             const headers =
               chess.header();
 
-            /*
-             * Number of half-moves.
-             */
-
             const history =
               chess.history();
 
             /*
-             * Convert half-moves
-             * to the number of the
-             * last chess move.
+             * Количество шахматных ходов.
              */
 
             const moveCount =
@@ -290,23 +249,17 @@ export default function App() {
               );
 
             let result =
-              headers.Result ||
-              "*";
-
-            /*
-             * Display draw nicely.
-             */
+              headers.Result || "*";
 
             if (
-              result ===
-              "1/2-1/2"
+              result === "1/2-1/2"
             ) {
               result = "½-½";
             }
 
             games.push({
               id:
-                Date.now() +
+                baseId +
                 index,
 
               name:
@@ -337,7 +290,7 @@ export default function App() {
             });
           } catch (error) {
             console.log(
-              "PGN error:",
+              "PGN game error:",
               error
             );
           }
@@ -346,28 +299,34 @@ export default function App() {
 
       if (!games.length) {
         alert(
-          "No games found in PGN"
+          "В PGN-файле не найдено партий."
         );
+
+        setImportingPGN(false);
 
         return;
       }
 
+      /*
+       * Создаём новую книгу.
+       */
+
       const newBook = {
-        id: Date.now(),
+        id:
+          Date.now(),
 
-        title: file.name,
+        title:
+          pendingPGNFile.name,
 
-        folder,
+        folder:
+          selectedFolder,
 
         games,
       };
 
       /*
-       * Save ONLY this new book
-       * to IndexedDB.
-       *
-       * We don't rewrite the whole
-       * library unnecessarily.
+       * Сохраняем книгу непосредственно
+       * в IndexedDB.
        */
 
       await addBook(
@@ -375,7 +334,7 @@ export default function App() {
       );
 
       /*
-       * Update React state.
+       * Обновляем React state.
        */
 
       setBooks(
@@ -385,25 +344,45 @@ export default function App() {
         ]
       );
 
-      setSelectedBook(
-        newBook
-      );
-
-      setSelectedGame(
-        null
-      );
-
-      setSearch("");
-
       /*
-       * Automatically open folder.
+       * Выбираем новую папку.
        */
+
+      setFolder(
+        selectedFolder
+      );
 
       setOpenFolders(
         (prev) => ({
           ...prev,
-          [folder]: true,
+          [selectedFolder]: true,
         })
+      );
+
+      /*
+       * Сразу выбираем импортированную книгу.
+       */
+
+      setSelectedBook(
+        newBook
+      );
+
+      setSelectedGame(null);
+
+      setSearch("");
+
+      /*
+       * Закрываем окно.
+       */
+
+      setShowImportDialog(false);
+
+      setShowFolderSelection(false);
+
+      setPendingPGNFile(null);
+
+      alert(
+        `Импортировано партий: ${games.length}`
       );
     } catch (error) {
       console.error(
@@ -412,7 +391,147 @@ export default function App() {
       );
 
       alert(
-        "PGN import error"
+        "PGN import error: " +
+          (
+            error?.message ||
+            error
+          )
+      );
+    } finally {
+      setImportingPGN(false);
+    }
+  }
+
+  // =========================================================
+  // EXPORT LIBRARY
+  // =========================================================
+
+  async function exportLibrary() {
+    try {
+      const data =
+        await getBooks();
+
+      const json =
+        JSON.stringify(
+          data,
+          null,
+          2
+        );
+
+      const blob =
+        new Blob(
+          [json],
+          {
+            type:
+              "application/json",
+          }
+        );
+
+      const url =
+        URL.createObjectURL(
+          blob
+        );
+
+      const a =
+        document.createElement(
+          "a"
+        );
+
+      a.href = url;
+
+      a.download =
+        "chess-library-backup.json";
+
+      document.body.appendChild(
+        a
+      );
+
+      a.click();
+
+      document.body.removeChild(
+        a
+      );
+
+      URL.revokeObjectURL(
+        url
+      );
+    } catch (error) {
+      console.error(
+        "Export error:",
+        error
+      );
+
+      alert(
+        "Ошибка экспорта библиотеки."
+      );
+    }
+  }
+
+  // =========================================================
+  // IMPORT BACKUP
+  // =========================================================
+
+  async function importLibrary(e) {
+    const file =
+      e.target.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    try {
+      const text =
+        await file.text();
+
+      const data =
+        JSON.parse(text);
+
+      if (!Array.isArray(data)) {
+        alert(
+          "Wrong backup file"
+        );
+
+        return;
+      }
+
+      /*
+       * Добавляем книги в IndexedDB.
+       */
+
+      for (
+        const book of data
+      ) {
+        await addBook(book);
+      }
+
+      /*
+       * Перечитываем библиотеку.
+       */
+
+      const updated =
+        await getBooks();
+
+      setBooks(
+        Array.isArray(updated)
+          ? updated
+          : []
+      );
+
+      setSelectedBook(null);
+
+      setSelectedGame(null);
+
+      alert(
+        "Library restored"
+      );
+    } catch (error) {
+      console.error(
+        "Backup import error:",
+        error
+      );
+
+      alert(
+        "Import error"
       );
     }
 
@@ -460,13 +579,9 @@ export default function App() {
         selectedBook &&
         selectedBook.id === id
       ) {
-        setSelectedBook(
-          null
-        );
+        setSelectedBook(null);
 
-        setSelectedGame(
-          null
-        );
+        setSelectedGame(null);
       }
     } catch (error) {
       console.error(
@@ -475,7 +590,7 @@ export default function App() {
       );
 
       alert(
-        "Cannot delete book"
+        "Ошибка удаления книги."
       );
     }
   }
@@ -513,7 +628,8 @@ export default function App() {
 
     const updatedBook = {
       ...book,
-      title: newName,
+      title:
+        newName,
     };
 
     try {
@@ -546,7 +662,7 @@ export default function App() {
       );
 
       alert(
-        "Cannot rename book"
+        "Ошибка переименования книги."
       );
     }
   }
@@ -604,26 +720,29 @@ export default function App() {
           .toLowerCase();
 
       return games.filter(
-        (game) =>
-          (game.white || "")
-            .toLowerCase()
-            .includes(q) ||
+        (game) => {
+          return (
+            (game.white || "")
+              .toLowerCase()
+              .includes(q) ||
 
-          (game.black || "")
-            .toLowerCase()
-            .includes(q) ||
+            (game.black || "")
+              .toLowerCase()
+              .includes(q) ||
 
-          (game.event || "")
-            .toLowerCase()
-            .includes(q) ||
+            (game.event || "")
+              .toLowerCase()
+              .includes(q) ||
 
-          (game.opening || "")
-            .toLowerCase()
-            .includes(q) ||
+            (game.opening || "")
+              .toLowerCase()
+              .includes(q) ||
 
-          (game.name || "")
-            .toLowerCase()
-            .includes(q)
+            (game.name || "")
+              .toLowerCase()
+              .includes(q)
+          );
+        }
       );
     }, [
       selectedBook,
@@ -664,7 +783,6 @@ export default function App() {
           ?.scrollIntoView({
             behavior:
               "smooth",
-
             block:
               "start",
           });
@@ -673,40 +791,28 @@ export default function App() {
   }
 
   // =========================================================
-  // MOVE LABEL
-  // =========================================================
-
-  function getMoveLabel(
-    count
-  ) {
-    if (count === 1) {
-      return "ход";
-    }
-
-    if (
-      count >= 2 &&
-      count <= 4
-    ) {
-      return "хода";
-    }
-
-    return "ходов";
-  }
-
-  // =========================================================
   // LOADING
   // =========================================================
 
-  if (loading) {
+  if (loadingBooks) {
     return (
       <div
         style={{
-          padding: 30,
+          minHeight:
+            "100vh",
+          display:
+            "flex",
+          alignItems:
+            "center",
+          justifyContent:
+            "center",
           fontFamily:
             "Arial, sans-serif",
+          fontSize:
+            18,
         }}
       >
-        Loading chess library...
+        ⏳ Loading chess library...
       </div>
     );
   }
@@ -716,675 +822,1080 @@ export default function App() {
   // =========================================================
 
   return (
-    <div
-      style={{
-        width: "100%",
-        minHeight: "100vh",
-        padding: 20,
-        boxSizing:
-          "border-box",
-        fontFamily:
-          "Arial, sans-serif",
-      }}
-    >
-      {/* =====================================================
-          TOP BAR
-      ===================================================== */}
-
+    <>
       <div
         style={{
-          display: "flex",
-          gap: 12,
-          flexWrap: "wrap",
-          marginBottom: 20,
-          alignItems:
-            "center",
-        }}
-      >
-        {/* IMPORT PGN */}
-
-        <label
-          style={{
-            display:
-              "inline-block",
-            background:
-              "#1976d2",
-            color: "white",
-            padding:
-              "10px 16px",
-            borderRadius: 8,
-            cursor:
-              "pointer",
-            fontWeight: 600,
-          }}
-        >
-          📂 Import PGN
-
-          <input
-            type="file"
-            accept=".pgn"
-            onChange={
-              handlePGNFile
-            }
-            style={{
-              display: "none",
-            }}
-          />
-        </label>
-
-        {/* EXPORT */}
-
-        <button
-          type="button"
-          onClick={
-            exportLibrary
-          }
-          style={{
-            padding:
-              "10px 16px",
-            borderRadius: 8,
-            cursor:
-              "pointer",
-            border:
-              "1px solid #ccc",
-            background:
-              "white",
-            fontWeight: 600,
-          }}
-        >
-          💾 Export Library
-        </button>
-
-        {/* IMPORT BACKUP */}
-
-        <label
-          style={{
-            display:
-              "inline-block",
-            background:
-              "#4caf50",
-            color: "white",
-            padding:
-              "10px 16px",
-            borderRadius: 8,
-            cursor:
-              "pointer",
-            fontWeight: 600,
-          }}
-        >
-          📥 Import Backup
-
-          <input
-            type="file"
-            accept=".json"
-            onChange={
-              importLibrary
-            }
-            style={{
-              display: "none",
-            }}
-          />
-        </label>
-
-        {/* FOLDER */}
-
-        <select
-          value={folder}
-          onChange={(e) =>
-            setFolder(
-              e.target.value
-            )
-          }
-          style={{
-            padding: 10,
-            borderRadius: 8,
-            border:
-              "1px solid #ccc",
-          }}
-        >
-          <option>
-            General
-          </option>
-
-          <option>
-            Miniatures
-          </option>
-
-          <option>
-            Openings
-          </option>
-
-          <option>
-            Masters
-          </option>
-
-          <option>
-            Tactics
-          </option>
-
-          <option>
-            Endgames
-          </option>
-        </select>
-
-        {/* SEARCH */}
-
-        <input
-          value={search}
-          onChange={(e) =>
-            setSearch(
-              e.target.value
-            )
-          }
-          placeholder="Search player / opening / event"
-          style={{
-            padding: 10,
-            width: isMobile
-              ? "100%"
-              : 320,
-            maxWidth: "100%",
-            boxSizing:
-              "border-box",
-            borderRadius: 8,
-            border:
-              "1px solid #ccc",
-          }}
-        />
-      </div>
-
-      {/* =====================================================
-          MAIN AREA
-      ===================================================== */}
-
-      <div
-        style={{
-          display: "flex",
-          gap: 20,
-
-          flexDirection:
-            isMobile
-              ? "column"
-              : "row",
-
-          alignItems:
-            "flex-start",
-
-          width: "100%",
+          width:
+            "100%",
+          minHeight:
+            "100vh",
+          padding:
+            20,
+          boxSizing:
+            "border-box",
+          fontFamily:
+            "Arial, sans-serif",
         }}
       >
         {/* ===================================================
-            BOOKS
+            TOP BAR
         =================================================== */}
 
         <div
           style={{
-            width: isMobile
-              ? "100%"
-              : 280,
-
-            flexShrink: 0,
+            display:
+              "flex",
+            gap:
+              12,
+            flexWrap:
+              "wrap",
+            marginBottom:
+              20,
+            alignItems:
+              "center",
           }}
         >
-          <h3
+          {/* IMPORT PGN */}
+
+          <label
             style={{
-              marginTop: 0,
+              display:
+                "inline-block",
+              background:
+                "#1976d2",
+              color:
+                "white",
+              padding:
+                "10px 16px",
+              borderRadius:
+                8,
+              cursor:
+                "pointer",
+              fontWeight:
+                600,
             }}
           >
-            📚 Books
-          </h3>
+            📂 Import PGN
+
+            <input
+              type="file"
+              accept=".pgn"
+              onChange={
+                openPGNImport
+              }
+              style={{
+                display:
+                  "none",
+              }}
+            />
+          </label>
+
+          {/* EXPORT */}
+
+          <button
+            type="button"
+            onClick={
+              exportLibrary
+            }
+            style={{
+              padding:
+                "10px 16px",
+              borderRadius:
+                8,
+              cursor:
+                "pointer",
+              border:
+                "1px solid #ccc",
+              background:
+                "white",
+              fontWeight:
+                600,
+            }}
+          >
+            💾 Export Library
+          </button>
+
+          {/* IMPORT BACKUP */}
+
+          <label
+            style={{
+              display:
+                "inline-block",
+              background:
+                "#4caf50",
+              color:
+                "white",
+              padding:
+                "10px 16px",
+              borderRadius:
+                8,
+              cursor:
+                "pointer",
+              fontWeight:
+                600,
+            }}
+          >
+            📥 Import Backup
+
+            <input
+              type="file"
+              accept=".json"
+              onChange={
+                importLibrary
+              }
+              style={{
+                display:
+                  "none",
+              }}
+            />
+          </label>
+
+          {/* SEARCH */}
+
+          <input
+            value={
+              search
+            }
+            onChange={(
+              e
+            ) =>
+              setSearch(
+                e.target.value
+              )
+            }
+            placeholder="Search player / opening / event"
+            style={{
+              padding:
+                10,
+              width:
+                isMobile
+                  ? "100%"
+                  : 320,
+              maxWidth:
+                "100%",
+              boxSizing:
+                "border-box",
+              borderRadius:
+                8,
+              border:
+                "1px solid #ccc",
+            }}
+          />
+        </div>
+
+        {/* ===================================================
+            MAIN AREA
+        =================================================== */}
+
+        <div
+          style={{
+            display:
+              "flex",
+            gap:
+              20,
+            flexDirection:
+              isMobile
+                ? "column"
+                : "row",
+            alignItems:
+              "flex-start",
+            width:
+              "100%",
+          }}
+        >
+          {/* =================================================
+              BOOKS
+          ================================================= */}
 
           <div
             style={{
-              maxHeight:
+              width:
                 isMobile
-                  ? 300
-                  : "80vh",
-
-              overflowY:
-                "auto",
+                  ? "100%"
+                  : 280,
+              flexShrink:
+                0,
             }}
           >
-            {Object.keys(
-              groupedBooks
-            ).length === 0 && (
-              <div
-                style={{
-                  padding: 12,
-                  opacity: 0.6,
-                }}
-              >
-                No books yet.
-                <br />
-                Import a PGN
-                file.
-              </div>
-            )}
+            <h3
+              style={{
+                marginTop:
+                  0,
+              }}
+            >
+              📚 Books
+            </h3>
 
-            {Object.entries(
-              groupedBooks
-            ).map(
-              ([
-                folderName,
-                folderBooks,
-              ]) => (
+            <div
+              style={{
+                maxHeight:
+                  isMobile
+                    ? 300
+                    : "80vh",
+                overflowY:
+                  "auto",
+              }}
+            >
+              {Object.keys(
+                groupedBooks
+              ).length ===
+                0 && (
                 <div
-                  key={
-                    folderName
-                  }
                   style={{
-                    marginBottom:
-                      15,
+                    padding:
+                      12,
+                    opacity:
+                      0.6,
                   }}
                 >
-                  {/* FOLDER HEADER */}
+                  No books yet.
+                  <br />
+                  Import a PGN
+                  file.
+                </div>
+              )}
 
+              {Object.entries(
+                groupedBooks
+              ).map(
+                ([
+                  folderName,
+                  folderBooks,
+                ]) => (
                   <div
-                    onClick={() =>
-                      setOpenFolders(
-                        (prev) => ({
-                          ...prev,
-
-                          [folderName]:
-                            !prev[
-                              folderName
-                            ],
-                        })
-                      )
+                    key={
+                      folderName
                     }
                     style={{
-                      padding: 8,
-                      cursor:
-                        "pointer",
-                      background:
-                        "#eee",
-                      borderRadius:
-                        8,
-                      fontWeight: 700,
-                      userSelect:
-                        "none",
+                      marginBottom:
+                        15,
                     }}
                   >
+                    {/* FOLDER HEADER */}
+
+                    <div
+                      onClick={() =>
+                        setOpenFolders(
+                          (
+                            prev
+                          ) => ({
+                            ...prev,
+
+                            [folderName]:
+                              !prev[
+                                folderName
+                              ],
+                          })
+                        )
+                      }
+                      style={{
+                        padding:
+                          8,
+                        cursor:
+                          "pointer",
+                        background:
+                          "#eee",
+                        borderRadius:
+                          8,
+                        fontWeight:
+                          700,
+                        userSelect:
+                          "none",
+                      }}
+                    >
+                      {openFolders[
+                        folderName
+                      ]
+                        ? "▼"
+                        : "▶"}{" "}
+                      📂{" "}
+                      {
+                        folderName
+                      }{" "}
+                      (
+                      {
+                        folderBooks.length
+                      }
+                      )
+                    </div>
+
+                    {/* BOOKS */}
+
                     {openFolders[
                       folderName
-                    ]
-                      ? "▼"
-                      : "▶"}{" "}
-                    📂{" "}
-                    {
-                      folderName
-                    }{" "}
-                    (
-                    {
-                      folderBooks.length
-                    }
-                    )
-                  </div>
-
-                  {/* BOOKS */}
-
-                  {openFolders[
-                    folderName
-                  ] && (
-                    <div>
-                      {folderBooks.map(
-                        (book) => (
-                          <div
-                            key={
-                              book.id
-                            }
-                            style={{
-                              marginTop:
-                                8,
-                              marginLeft:
-                                10,
-                              padding:
-                                10,
-                              borderRadius:
-                                8,
-
-                              border:
-                                selectedBook?.id ===
-                                book.id
-                                  ? "2px solid #1976d2"
-                                  : "1px solid #ccc",
-
-                              background:
-                                "white",
-                            }}
-                          >
+                    ] && (
+                      <div>
+                        {folderBooks.map(
+                          (
+                            book
+                          ) => (
                             <div
+                              key={
+                                book.id
+                              }
                               style={{
-                                display:
-                                  "flex",
-                                justifyContent:
-                                  "space-between",
-                                alignItems:
-                                  "flex-start",
-                                gap: 8,
+                                marginTop:
+                                  8,
+                                marginLeft:
+                                  10,
+                                padding:
+                                  10,
+                                borderRadius:
+                                  8,
+
+                                border:
+                                  selectedBook?.id ===
+                                  book.id
+                                    ? "2px solid #1976d2"
+                                    : "1px solid #ccc",
+
+                                background:
+                                  "white",
                               }}
                             >
-                              {/* BOOK NAME */}
-
-                              <div
-                                onClick={() =>
-                                  selectBook(
-                                    book
-                                  )
-                                }
-                                style={{
-                                  cursor:
-                                    "pointer",
-                                  flex: 1,
-                                  minWidth:
-                                    0,
-                                }}
-                              >
-                                <div
-                                  style={{
-                                    wordBreak:
-                                      "break-word",
-                                  }}
-                                >
-                                  📘{" "}
-                                  {
-                                    book.title
-                                  }
-                                </div>
-
-                                <div
-                                  style={{
-                                    fontSize:
-                                      12,
-                                    opacity:
-                                      0.6,
-                                    marginTop:
-                                      4,
-                                  }}
-                                >
-                                  {
-                                    (
-                                      book.games ||
-                                      []
-                                    ).length
-                                  }{" "}
-                                  games
-                                </div>
-                              </div>
-
-                              {/* BUTTONS */}
-
                               <div
                                 style={{
                                   display:
                                     "flex",
-                                  gap: 5,
-                                  flexShrink:
-                                    0,
+                                  justifyContent:
+                                    "space-between",
+                                  alignItems:
+                                    "flex-start",
+                                  gap:
+                                    8,
                                 }}
                               >
-                                <button
-                                  type="button"
-                                  onClick={(
-                                    e
-                                  ) => {
-                                    e.stopPropagation();
+                                {/* BOOK NAME */}
 
-                                    renameBook(
-                                      book.id
-                                    );
-                                  }}
+                                <div
+                                  onClick={() =>
+                                    selectBook(
+                                      book
+                                    )
+                                  }
                                   style={{
                                     cursor:
                                       "pointer",
-                                    padding:
-                                      "5px 7px",
-                                    borderRadius:
-                                      6,
-                                    border:
-                                      "1px solid #ccc",
-                                    background:
-                                      "white",
+                                    flex:
+                                      1,
+                                    minWidth:
+                                      0,
                                   }}
-                                  title="Rename book"
                                 >
-                                  ✏️
-                                </button>
+                                  <div
+                                    style={{
+                                      wordBreak:
+                                        "break-word",
+                                    }}
+                                  >
+                                    📘{" "}
+                                    {
+                                      book.title
+                                    }
+                                  </div>
 
-                                <button
-                                  type="button"
-                                  onClick={(
-                                    e
-                                  ) => {
-                                    e.stopPropagation();
+                                  <div
+                                    style={{
+                                      fontSize:
+                                        12,
+                                      opacity:
+                                        0.6,
+                                      marginTop:
+                                        4,
+                                    }}
+                                  >
+                                    {
+                                      (
+                                        book.games ||
+                                        []
+                                      ).length
+                                    }{" "}
+                                    games
+                                  </div>
+                                </div>
 
-                                    deleteBook(
-                                      book.id
-                                    );
-                                  }}
+                                {/* BUTTONS */}
+
+                                <div
                                   style={{
-                                    cursor:
-                                      "pointer",
-                                    padding:
-                                      "5px 7px",
-                                    borderRadius:
-                                      6,
-                                    border:
-                                      "1px solid #ccc",
-                                    background:
-                                      "white",
+                                    display:
+                                      "flex",
+                                    gap:
+                                      5,
+                                    flexShrink:
+                                      0,
                                   }}
-                                  title="Delete book"
                                 >
-                                  ❌
-                                </button>
+                                  <button
+                                    type="button"
+                                    onClick={(
+                                      e
+                                    ) => {
+                                      e.stopPropagation();
+
+                                      renameBook(
+                                        book.id
+                                      );
+                                    }}
+                                    style={{
+                                      cursor:
+                                        "pointer",
+                                      padding:
+                                        "5px 7px",
+                                      borderRadius:
+                                        6,
+                                      border:
+                                        "1px solid #ccc",
+                                      background:
+                                        "white",
+                                    }}
+                                    title="Rename book"
+                                  >
+                                    ✏️
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={(
+                                      e
+                                    ) => {
+                                      e.stopPropagation();
+
+                                      deleteBook(
+                                        book.id
+                                      );
+                                    }}
+                                    style={{
+                                      cursor:
+                                        "pointer",
+                                      padding:
+                                        "5px 7px",
+                                      borderRadius:
+                                        6,
+                                      border:
+                                        "1px solid #ccc",
+                                      background:
+                                        "white",
+                                    }}
+                                    title="Delete book"
+                                  >
+                                    ❌
+                                  </button>
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        )
-                      )}
-                    </div>
-                  )}
-                </div>
-              )
-            )}
-          </div>
-        </div>
-
-        {/* ===================================================
-            GAMES
-        =================================================== */}
-
-        <div
-          style={{
-            width: isMobile
-              ? "100%"
-              : 340,
-
-            flexShrink: 0,
-          }}
-        >
-          <h3
-            style={{
-              marginTop: 0,
-            }}
-          >
-            ♟ Games (
-            {
-              filteredGames.length
-            }
-            )
-          </h3>
-
-          {!selectedBook && (
-            <div
-              style={{
-                padding: 12,
-                opacity: 0.6,
-              }}
-            >
-              Select a book
+                          )
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              )}
             </div>
-          )}
+          </div>
+
+          {/* =================================================
+              GAMES
+          ================================================= */}
 
           <div
             style={{
-              maxHeight:
+              width:
                 isMobile
-                  ? 300
-                  : "80vh",
-
-              overflowY:
-                "auto",
+                  ? "100%"
+                  : 340,
+              flexShrink:
+                0,
             }}
           >
-            {filteredGames.map(
-              (
-                game,
-                index
-              ) => (
+            {/* SELECTED BOOK HEADER */}
+
+            {selectedBook && (
+              <div
+                style={{
+                  marginBottom:
+                    14,
+                  padding:
+                    "14px 16px",
+                  background:
+                    "#f5f7fa",
+                  borderRadius:
+                    10,
+                  border:
+                    "1px solid #ddd",
+                  boxSizing:
+                    "border-box",
+                }}
+              >
                 <div
-                  key={
-                    game.id
-                  }
-                  onClick={() =>
-                    selectGame(
-                      game
-                    )
-                  }
                   style={{
-                    padding: 10,
-                    marginBottom:
-                      8,
-                    cursor:
-                      "pointer",
-                    borderRadius:
-                      8,
-
-                    border:
-                      selectedGame?.id ===
-                      game.id
-                        ? "2px solid #ff9800"
-                        : "1px solid #ddd",
-
-                    background:
-                      selectedGame?.id ===
-                      game.id
-                        ? "#fff3cd"
-                        : "white",
+                    fontSize:
+                      17,
+                    fontWeight:
+                      700,
+                    wordBreak:
+                      "break-word",
                   }}
                 >
-                  {/* GAME NAME */}
+                  📖{" "}
+                  {
+                    selectedBook.title
+                  }
+                </div>
 
+                <div
+                  style={{
+                    marginTop:
+                      5,
+                    fontSize:
+                      13,
+                    opacity:
+                      0.65,
+                  }}
+                >
+                  {
+                    (
+                      selectedBook.games ||
+                      []
+                    ).length
+                  }{" "}
+                  партий
+                </div>
+              </div>
+            )}
+
+            {/* GAMES TITLE */}
+
+            <h3
+              style={{
+                marginTop:
+                  0,
+                marginBottom:
+                  12,
+              }}
+            >
+              ♟ Партии (
+              {
+                filteredGames.length
+              }
+              )
+            </h3>
+
+            {!selectedBook && (
+              <div
+                style={{
+                  padding:
+                    12,
+                  opacity:
+                    0.6,
+                }}
+              >
+                Select a book
+              </div>
+            )}
+
+            <div
+              style={{
+                maxHeight:
+                  isMobile
+                    ? 300
+                    : "80vh",
+                overflowY:
+                  "auto",
+              }}
+            >
+              {filteredGames.map(
+                (
+                  game,
+                  index
+                ) => (
                   <div
+                    key={
+                      game.id
+                    }
+                    onClick={() =>
+                      selectGame(
+                        game
+                      )
+                    }
                     style={{
-                      wordBreak:
-                        "break-word",
+                      padding:
+                        10,
+                      marginBottom:
+                        8,
+                      cursor:
+                        "pointer",
+                      borderRadius:
+                        8,
+
+                      border:
+                        selectedGame?.id ===
+                        game.id
+                          ? "2px solid #ff9800"
+                          : "1px solid #ddd",
+
+                      background:
+                        selectedGame?.id ===
+                        game.id
+                          ? "#fff3cd"
+                          : "white",
                     }}
                   >
-                    ♟{" "}
-                    {index + 1}.{" "}
-                    {game.name}
-                  </div>
+                    {/* GAME NAME */}
 
-                  {/* MOVES + RESULT */}
+                    <div
+                      style={{
+                        wordBreak:
+                          "break-word",
+                        fontWeight:
+                          selectedGame?.id ===
+                          game.id
+                            ? 700
+                            : 500,
+                      }}
+                    >
+                      ♟{" "}
+                      {index +
+                        1}
+                      .{" "}
+                      {
+                        game.name
+                      }
+                    </div>
 
-                  <div
-                    style={{
-                      fontSize: 12,
-                      marginTop: 5,
-                      opacity: 0.7,
-                    }}
-                  >
-                    {game.moveCount ||
-                      0}{" "}
-                    {getMoveLabel(
-                      game.moveCount ||
-                        0
+                    {/* MOVES + RESULT */}
+
+                    <div
+                      style={{
+                        display:
+                          "flex",
+                        justifyContent:
+                          "space-between",
+                        alignItems:
+                          "center",
+                        gap:
+                          10,
+                        marginTop:
+                          6,
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize:
+                            12,
+                          opacity:
+                            0.7,
+                        }}
+                      >
+                        ♟{" "}
+                        {
+                          game.moveCount ||
+                          0
+                        }{" "}
+                        {game.moveCount ===
+                        1
+                          ? "ход"
+                          : game.moveCount >=
+                                2 &&
+                            game.moveCount <=
+                              4
+                          ? "хода"
+                          : "ходов"}
+                      </div>
+
+                      <div
+                        style={{
+                          fontSize:
+                            13,
+                          fontWeight:
+                            700,
+                          padding:
+                            "3px 8px",
+                          borderRadius:
+                            6,
+                          background:
+                            "#f0f0f0",
+                        }}
+                      >
+                        {
+                          game.result ||
+                          "*"
+                        }
+                      </div>
+                    </div>
+
+                    {/* OPENING */}
+
+                    {game.opening && (
+                      <div
+                        style={{
+                          fontSize:
+                            12,
+                          opacity:
+                            0.6,
+                          marginTop:
+                            4,
+                        }}
+                      >
+                        {
+                          game.opening
+                        }
+                      </div>
                     )}
 
-                    {" · "}
+                    {/* EVENT */}
 
-                    <strong>
-                      {game.result ||
-                        "*"}
-                    </strong>
+                    {game.event && (
+                      <div
+                        style={{
+                          fontSize:
+                            11,
+                          opacity:
+                            0.5,
+                          marginTop:
+                            2,
+                        }}
+                      >
+                        {
+                          game.event
+                        }
+                      </div>
+                    )}
                   </div>
+                )
+              )}
+            </div>
+          </div>
 
-                  {/* OPENING */}
+          {/* =================================================
+              BOARD
+          ================================================= */}
 
-                  {game.opening && (
-                    <div
-                      style={{
-                        fontSize: 12,
-                        opacity:
-                          0.6,
-                        marginTop:
-                          4,
-                      }}
-                    >
-                      {
-                        game.opening
-                      }
-                    </div>
-                  )}
-
-                  {/* EVENT */}
-
-                  {game.event && (
-                    <div
-                      style={{
-                        fontSize: 11,
-                        opacity:
-                          0.5,
-                        marginTop:
-                          2,
-                      }}
-                    >
-                      {
-                        game.event
-                      }
-                    </div>
-                  )}
-                </div>
-              )
+          <div
+            id="chess-board-container"
+            style={{
+              flex:
+                1,
+              minWidth:
+                0,
+              width:
+                isMobile
+                  ? "100%"
+                  : "auto",
+            }}
+          >
+            {selectedGame ? (
+              <Board
+                pgn={
+                  selectedGame.pgn
+                }
+              />
+            ) : (
+              <div
+                style={{
+                  paddingTop:
+                    40,
+                  paddingBottom:
+                    40,
+                  opacity:
+                    0.6,
+                }}
+              >
+                Select a game
+              </div>
             )}
           </div>
         </div>
+      </div>
 
-        {/* ===================================================
-            BOARD
-        =================================================== */}
+      {/* =====================================================
+          PGN IMPORT MODAL
+      ===================================================== */}
 
+      {showImportDialog && (
         <div
-          id="chess-board-container"
           style={{
-            flex: 1,
-            minWidth: 0,
-
-            width: isMobile
-              ? "100%"
-              : "auto",
+            position:
+              "fixed",
+            inset:
+              0,
+            background:
+              "rgba(0,0,0,0.55)",
+            display:
+              "flex",
+            alignItems:
+              "center",
+            justifyContent:
+              "center",
+            zIndex:
+              10000,
+            padding:
+              20,
+            boxSizing:
+              "border-box",
           }}
         >
-          {selectedGame ? (
-            <Board
-              pgn={
-                selectedGame.pgn
-              }
-            />
-          ) : (
-            <div
+          <div
+            style={{
+              width:
+                "100%",
+              maxWidth:
+                500,
+              background:
+                "white",
+              borderRadius:
+                16,
+              padding:
+                24,
+              boxSizing:
+                "border-box",
+              boxShadow:
+                "0 20px 60px rgba(0,0,0,0.3)",
+            }}
+          >
+            {/* TITLE */}
+
+            <h2
               style={{
-                paddingTop: 40,
-                paddingBottom: 40,
-                opacity: 0.6,
+                marginTop:
+                  0,
+                marginBottom:
+                  12,
               }}
             >
-              Select a game
+              📂 Импорт PGN
+            </h2>
+
+            {/* FILE */}
+
+            <div
+              style={{
+                padding:
+                  14,
+                background:
+                  "#f5f5f5",
+                borderRadius:
+                  10,
+                marginBottom:
+                  20,
+                wordBreak:
+                  "break-word",
+              }}
+            >
+              <strong>
+                Файл:
+              </strong>
+
+              <br />
+
+              {
+                pendingPGNFile?.name ||
+                ""
+              }
             </div>
-          )}
+
+            {!showFolderSelection ? (
+              <>
+                <div
+                  style={{
+                    marginBottom:
+                      20,
+                    lineHeight:
+                      1.5,
+                  }}
+                >
+                  Для импорта книги
+                  необходимо выбрать
+                  папку, в которую она
+                  будет помещена.
+                </div>
+
+                {/* REQUIRED FOLDER BUTTON */}
+
+                <button
+                  type="button"
+                  onClick={
+                    openFolderSelection
+                  }
+                  style={{
+                    width:
+                      "100%",
+                    padding:
+                      "14px 18px",
+                    border:
+                      "none",
+                    borderRadius:
+                      10,
+                    background:
+                      "#1976d2",
+                    color:
+                      "white",
+                    cursor:
+                      "pointer",
+                    fontSize:
+                      16,
+                    fontWeight:
+                      700,
+                  }}
+                >
+                  📁 Выбор папки
+                </button>
+
+                <button
+                  type="button"
+                  onClick={
+                    cancelPGNImport
+                  }
+                  style={{
+                    width:
+                      "100%",
+                    marginTop:
+                      10,
+                    padding:
+                      "12px 18px",
+                    border:
+                      "1px solid #ccc",
+                    borderRadius:
+                      10,
+                    background:
+                      "white",
+                    cursor:
+                      "pointer",
+                    fontSize:
+                      15,
+                  }}
+                >
+                  Отмена
+                </button>
+              </>
+            ) : (
+              <>
+                <div
+                  style={{
+                    fontWeight:
+                      700,
+                    marginBottom:
+                      12,
+                  }}
+                >
+                  📁 Выберите папку
+                </div>
+
+                <div
+                  style={{
+                    display:
+                      "grid",
+                    gridTemplateColumns:
+                      isMobile
+                        ? "1fr"
+                        : "1fr 1fr",
+                    gap:
+                      10,
+                  }}
+                >
+                  {folders.map(
+                    (
+                      folderName
+                    ) => (
+                      <button
+                        key={
+                          folderName
+                        }
+                        type="button"
+                        disabled={
+                          importingPGN
+                        }
+                        onClick={() =>
+                          importPGNIntoFolder(
+                            folderName
+                          )
+                        }
+                        style={{
+                          padding:
+                            "14px 10px",
+                          border:
+                            "1px solid #ccc",
+                          borderRadius:
+                            10,
+                          background:
+                            folderName ===
+                            folder
+                              ? "#e3f2fd"
+                              : "white",
+                          cursor:
+                            importingPGN
+                              ? "wait"
+                              : "pointer",
+                          fontSize:
+                            15,
+                          fontWeight:
+                            600,
+                        }}
+                      >
+                        📂{" "}
+                        {
+                          folderName
+                        }
+                      </button>
+                    )
+                  )}
+                </div>
+
+                {importingPGN && (
+                  <div
+                    style={{
+                      textAlign:
+                        "center",
+                      marginTop:
+                        18,
+                      fontWeight:
+                        600,
+                    }}
+                  >
+                    ⏳ Импортируем
+                    партии...
+                  </div>
+                )}
+
+                {!importingPGN && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setShowFolderSelection(
+                        false
+                      )
+                    }
+                    style={{
+                      width:
+                        "100%",
+                      marginTop:
+                        14,
+                      padding:
+                        "12px 18px",
+                      border:
+                        "1px solid #ccc",
+                      borderRadius:
+                        10,
+                      background:
+                        "white",
+                      cursor:
+                        "pointer",
+                    }}
+                  >
+                    ← Назад
+                  </button>
+                )}
+              </>
+            )}
+          </div>
         </div>
-      </div>
-    </div>
+      )}
+    </>
   );
 }
+
+
+
+
+
+
